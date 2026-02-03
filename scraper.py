@@ -1,5 +1,6 @@
+import requests
 import re
-from asyncio.sslproto import SSLProtocolState
+
 from urllib.parse import urlparse, urljoin, urldefrag
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
@@ -119,26 +120,73 @@ def _standard_url(u: str):
     except Exception:
         return None
 
-
-
 def is_valid(url):
-    # Decide whether to crawl this url or not. 
+    # Decide whether to crawl this url or not.
     # If you decide to crawl it, return True; otherwise return False.
     # There are already some conditions that return False.
+
     try:
         parsed = urlparse(url)
-        if parsed.scheme not in set(["http", "https"]):
+
+        # 1. Scheme Check: Only allow http and https [cite: 78]
+        if parsed.scheme not in ALLOWED_SCHEMES:
             return False
-        return not re.match(
-            r".*\.(css|js|bmp|gif|jpe?g|ico"
-            + r"|png|tiff?|mid|mp2|mp3|mp4"
-            + r"|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf"
-            + r"|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names"
-            + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
-            + r"|epub|dll|cnf|tgz|sha1"
-            + r"|thmx|mso|arff|rtf|jar|csv"
-            + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
+
+        # 2. Domain Check: Must be within the specified UCI domains [cite: 17, 53, 121]
+        # host is retrieved via parsed.hostname
+        host = (parsed.hostname or "").lower()
+        if not any(host == domain or host.endswith("." + domain) for domain in ALLOWED_HOST_SUFFIXES):
+            return False
+
+        # 3. Extension Filtering: Avoid non-text or large files
+        # This regex filters out images, archives, and multimedia to save bandwidth.
+        if re.match(
+                r".*\.(css|js|bmp|gif|jpe?g|ico"
+                + r"|png|tiff?|mid|mp2|mp3|mp4"
+                + r"|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf"
+                + r"|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names"
+                + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
+                + r"|epub|dll|cnf|tgz|sha1"
+                + r"|thmx|mso|arff|rtf|jar|csv"
+                + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()):
+            return False
+
+        path = parsed.path.lower()
+        query = (parsed.query or "").lower()
+
+        # 4. Calendar and Keyword Traps: Avoiding dynamic event directories
+        # Check for invalid keywords in the path
+        invalid_keywords = ["/events/", "/week/", "/month/", "/wp-login.php"]
+        if any(keyword in path for keyword in invalid_keywords):
+            return False
+
+        #  events tag/day/list + params
+        if "/events/tag/" in path or "/events/day/" in path or "/events/list" in path:
+            return False
+        if "ical=1" in query or "tribe_" in query or "tribe-bar-date" in query:
+            return False
+
+        # doku wiki
+        if path.startswith("/doku.php"):
+            return False
+        if "/lib/exe/fetch.php" in path:
+            return False
+
+        # Check for year/month patterns
+        if re.search(r"/\d{4}/\d{2}/", path):
+            return False
+
+        # 5. Path Depth and Loops: Prevents infinite directory nesting
+        path_segments = [s for s in path.split('/') if s]
+        if len(path_segments) > 10:  # Excessive depth is likely a trap [cite: 66]
+            return False
+
+        from collections import Counter
+        if any(count > 2 for count in Counter(path_segments).values()):  # Detects /a/b/a/b loops
+            return False
+
+        return True
 
     except TypeError:
-        print ("TypeError for ", parsed)
-        raise
+        print("TypeError for ", parsed)
+        return False
