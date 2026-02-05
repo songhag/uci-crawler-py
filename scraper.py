@@ -295,35 +295,30 @@ def is_valid(url):
         path = parsed.path.lower()
         query = (parsed.query or "").lower()
 
-        # 4. Calendar and Keyword Traps: Avoiding dynamic event directories
-        # Check for invalid keywords in the path
-        invalid_keywords = ["/events/", "/week/", "/month/", "/wp-login.php"]
-        if any(keyword in path for keyword in invalid_keywords):
-            return False
 
-        #  events tag/day/list + params
-        if "/events/tag/" in path or "/events/day/" in path or "/events/list" in path:
+        # 4) Events/calendar traps (minimal)
+        if "/events/tag/" in path or "/events/day/" in path:
+            return False
+        if "/events/week" in path or "/events/month" in path or "/events/list" in path:
             return False
         if "ical=1" in query or "tribe_" in query or "tribe-bar-date" in query:
             return False
 
-        # doku wiki
+        # 5) DokuWiki trap
         if path.startswith("/doku.php"):
             return False
         if "/lib/exe/fetch.php" in path:
             return False
 
-        # Check for year/month patterns
-        if re.search(r"/\d{4}/\d{2}/", path):
+        # 6) Login pages
+        if path.endswith("/wp-login.php"):
             return False
 
-        # 5. Path Depth and Loops: Prevents infinite directory nesting
-        path_segments = [s for s in path.split('/') if s]
-        if len(path_segments) > 10:  # Excessive depth is likely a trap [cite: 66]
+        # 7) Basic depth / repetition
+        segments = [s for s in path.split("/") if s]
+        if len(segments) > 12:
             return False
-
-        from collections import Counter
-        if any(count > 2 for count in Counter(path_segments).values()):  # Detects /a/b/a/b loops
+        if any(count > 3 for count in Counter(segments).values()):
             return False
 
         return True
@@ -374,4 +369,5 @@ def _path_signature(host, path, query_dict):
             norm_segs.append(s.lower())
 
     qkeys = sorted(k.lower() for k in query_dict.keys())[:8]
+
     return host + "/" + "/".join(norm_segs) + "?" + "&".join(qkeys)
