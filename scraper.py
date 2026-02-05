@@ -1,4 +1,3 @@
-import requests
 import re
 import json
 import time
@@ -175,6 +174,9 @@ def scraper(url, resp):
     except Exception:
         return valid_links
 
+    return valid_links
+
+_load_stats()
 
 
 def extract_next_links(url, resp):
@@ -201,7 +203,7 @@ def extract_next_links(url, resp):
         if not content:
             return links
 
-        base_url = getattr(raw, "url", None) or url
+        base_url = getattr(resp, "url", None) or getattr(raw, "url", None) or url
 
         soup = BeautifulSoup(content, "lxml")
 
