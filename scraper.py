@@ -1,5 +1,8 @@
 import requests
 import re
+import json
+import time
+import hashlib
 
 from urllib.parse import urlparse, urljoin, urldefrag
 from bs4 import BeautifulSoup
@@ -29,12 +32,148 @@ WORD_RE = re.compile(r"[a-z0-9]+")
 PATH_FAMILY_COUNT = Counter()
 CONTENT_HASHES = set()
 
+STATS_PATH = "crawl_stats.json"
+
+STOP_WORDS = {
+    "a","about","above","after","again","against","all","am","an","and","any","are","as","at",
+    "be","because","been","before","being","below","between","both","but","by",
+    "can","could",
+    "did","do","does","doing","down","during",
+    "each",
+    "few","for","from","further",
+    "had","has","have","having","he","her","here","hers","herself","him","himself","his","how",
+    "i","if","in","into","is","it","its","itself",
+    "just",
+    "me","more","most","my","myself",
+    "no","nor","not","now",
+    "of","off","on","once","only","or","other","our","ours","ourselves","out","over","own",
+    "same","she","should","so","some","such",
+    "than","that","the","their","theirs","them","themselves","then","there","these","they",
+    "this","those","through","to","too",
+    "under","until","up",
+    "very",
+    "was","we","were","what","when","where","which","while","who","whom","why","with","would",
+    "you","your","yours","yourself","yourselves",
+}
+
+def _load_stats():
+    """Load persisted stats if present"""
+    global SEEN_URLS, PAGE_WORDCOUNT, LONGEST_PAGE_URL, LONGEST_PAGE_WORDS
+    global GLOBAL_WORD_FREQ, SUBDOMAIN_PAGECOUNT, PATH_FAMILY_COUNT, CONTENT_HASHES
+
+    try:
+        with open(STATS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        SEEN_URLS = set(data.get("seen_urls", []))
+        PAGE_WORDCOUNT = {k: int(v) for k, v in data.get("page_wordcount", {}).items()}
+        LONGEST_PAGE_URL = data.get("longest_page_url")
+        LONGEST_PAGE_WORDS = int(data.get("longest_page_words", 0))
+
+        GLOBAL_WORD_FREQ = Counter(data.get("global_word_freq", {}))
+        SUBDOMAIN_PAGECOUNT = defaultdict(int, {k: int(v) for k, v in data.get("subdomain_pagecount", {}).items()})
+        PATH_FAMILY_COUNT = Counter(data.get("path_family_count", {}))
+        CONTENT_HASHES = set(data.get("content_hashes", []))
+
+    except FileNotFoundError:
+        return
+    except Exception:
+        return
+
+
+def _save_stats(throttle_seconds=2.0):
+    """Persist stats"""
+    now = time.time()
+    last = getattr(_save_stats, "_last_save_ts", 0.0)
+    if now - last < throttle_seconds:
+        return
+    _save_stats._last_save_ts = now
+
+    data = {
+        "seen_urls": sorted(SEEN_URLS),
+        "page_wordcount": PAGE_WORDCOUNT,
+        "longest_page_url": LONGEST_PAGE_URL,
+        "longest_page_words": LONGEST_PAGE_WORDS,
+        "global_word_freq": dict(GLOBAL_WORD_FREQ),
+        "subdomain_pagecount": dict(SUBDOMAIN_PAGECOUNT),
+        "path_family_count": dict(PATH_FAMILY_COUNT),
+        "content_hashes": sorted(CONTENT_HASHES),
+    }
+    try:
+        with open(STATS_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
 
 
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
-    return [link for link in links if is_valid(link)]
+    valid_links = [link for link in links if is_valid(link)]
+
+    try:
+        if resp is None or getattr(resp, "status", None) != 200:
+            return valid_links
+
+        raw = getattr(resp, "raw_response", None)
+        if raw is None:
+            return valid_links
+
+        content = getattr(raw, "content", None)
+        if not content:
+            return valid_links
+
+        headers = getattr(raw, "headers", {}) or {}
+        ctype = ""
+        if isinstance(headers, dict):
+            ctype = headers.get("Content-Type", "") or headers.get("content-type", "") or ""
+        if ctype and ("text/html" not in ctype and "application/xhtml+xml" not in ctype):
+            return valid_links
+
+        canon_url = _standard_url(resp.url if getattr(resp, "url", None) else url)
+        if canon_url is None:
+            return valid_links
+
+        if canon_url in SEEN_URLS:
+            return valid_links
+        SEEN_URLS.add(canon_url)
+
+        soup = BeautifulSoup(content, "lxml")
+        _remove_junk_tags(soup)
+        text = soup.get_text(separator = " ", strip = True)
+        tokens = _tokenize(text)
+
+        if len(tokens) < 50:
+            _save_stats()
+            return valid_links
+
+        text_hash = hashlib.sha1(text.encode("utf-8", errors = "ignore")).hexdigest()
+        if text_hash in CONTENT_HASHES:
+            _save_stats()
+            return valid_links
+        CONTENT_HASHES.add(text_hash)
+
+        wc = len(tokens)
+        PAGE_WORDCOUNT[canon_url] = wc
+        global LONGEST_PAGE_URL, LONGEST_PAGE_WORDS
+        if wc > LONGEST_PAGE_WORDS:
+            LONGEST_PAGE_WORDS = wc
+            LONGEST_PAGE_URL = canon_url
+
+        for w in tokens:
+            if w not in STOP_WORDS:
+                GLOBAL_WORD_FREQ[w] += 1
+
+        parsed = urlparse(canon_url)
+        host = (parsed.hostname or "").lower()
+        if host.endswith("uci.edu"):
+            SUBDOMAIN_PAGECOUNT[host] += 1
+
+        _save_stats()
+
+    except Exception:
+        return valid_links
 
 
 
@@ -190,3 +329,47 @@ def is_valid(url):
     except TypeError:
         print("TypeError for ", parsed)
         return False
+
+def _remove_junk_tags(soup: BeautifulSoup):
+    """Remove tags that are not useful for text analytics."""
+    for tag in soup(["script", "style", "noscript", "header", "footer", "nav", "aside", "form"]):
+        tag.decompose()
+
+
+def _tokenize(text: str):
+    """Tokenize visible text into lowercase words/numbers."""
+    text = text.lower()
+    return WORD_RE.findall(text)
+
+
+def _has_repeated_segments(segments):
+    """Detect repeating patterns in path segments."""
+    if len(segments) < 6:
+        return False
+    counts = Counter(segments)
+    if max(counts.values()) >= 4:
+        return True
+    streak = 1
+    for i in range(1, len(segments)):
+        if segments[i] == segments[i - 1]:
+            streak += 1
+            if streak >= 3:
+                return True
+        else:
+            streak = 1
+    return False
+
+
+def _path_signature(host, path, query_dict):
+    segs = [s for s in path.split("/") if s]
+    norm_segs = []
+    for s in segs[:10]:
+        if re.fullmatch(r"\d+", s):
+            norm_segs.append("{num}")
+        elif re.fullmatch(r"[0-9a-f]{8,}", s, flags=re.IGNORECASE):
+            norm_segs.append("{hex}")
+        else:
+            norm_segs.append(s.lower())
+
+    qkeys = sorted(k.lower() for k in query_dict.keys())[:8]
+    return host + "/" + "/".join(norm_segs) + "?" + "&".join(qkeys)
