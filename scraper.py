@@ -176,8 +176,11 @@ def scraper(url, resp):
             LONGEST_PAGE_URL = standard_url
 
         for w in tokens:
-            if w not in STOP_WORDS:
-                GLOBAL_WORD_FREQ[w] += 1
+            if w in STOP_WORDS:
+                continue
+            if not any(ch.isalpha() for ch in w):
+                continue
+            GLOBAL_WORD_FREQ[w] += 1
 
         parsed = urlparse(standard_url)
         host = (parsed.hostname or "").lower()
@@ -315,6 +318,9 @@ def is_valid(url):
         query = (parsed.query or "").lower()
 
         if "/events/" in path:
+            return False
+
+        if "/event/" in path:
             return False
 
         if re.search(r"/\d{4}-\d{2}$", path):
