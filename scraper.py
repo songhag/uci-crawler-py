@@ -135,13 +135,13 @@ def scraper(url, resp):
         if ctype and ("text/html" not in ctype and "application/xhtml+xml" not in ctype):
             return valid_links
 
-        canon_url = _standard_url(resp.url if getattr(resp, "url", None) else url)
-        if canon_url is None:
+        standard_url = _standard_url(resp.url if getattr(resp, "url", None) else url)
+        if standard_url is None:
             return valid_links
 
-        if canon_url in SEEN_URLS:
+        if standard_url in SEEN_URLS:
             return valid_links
-        SEEN_URLS.add(canon_url)
+        SEEN_URLS.add(standard_url)
 
         soup = BeautifulSoup(content, "lxml")
         _remove_junk_tags(soup)
@@ -169,17 +169,17 @@ def scraper(url, resp):
         CONTENT_HASHES.add(text_hash)
 
         wc = len(tokens)
-        PAGE_WORDCOUNT[canon_url] = wc
+        PAGE_WORDCOUNT[standard_url] = wc
         global LONGEST_PAGE_URL, LONGEST_PAGE_WORDS
         if wc > LONGEST_PAGE_WORDS:
             LONGEST_PAGE_WORDS = wc
-            LONGEST_PAGE_URL = canon_url
+            LONGEST_PAGE_URL = standard_url
 
         for w in tokens:
             if w not in STOP_WORDS:
                 GLOBAL_WORD_FREQ[w] += 1
 
-        parsed = urlparse(canon_url)
+        parsed = urlparse(standard_url)
         host = (parsed.hostname or "").lower()
         if host.endswith("uci.edu"):
             SUBDOMAIN_PAGECOUNT[host] += 1
@@ -301,8 +301,8 @@ def is_valid(url):
         # 3. Extension Filtering: Avoid non-text or large files
         # This regex filters out images, archives, and multimedia to save bandwidth.
         if re.match(
-                r".*\.(css|js|bmp|gif|jpe?g|ico"
-                + r"|png|tiff?|mid|mp2|mp3|mp4"
+                r".*\.(css|js|bmp|gif|jpe?g|ico|webp"
+                + r"|png|tiff?|mid|mp2|mp3|mp4|webm"
                 + r"|wav|avi|mov|mpeg|mpg|ram|m4v|mkv|ogg|ogv|pdf"
                 + r"|ps|eps|tex|ppt|pptx|pps|ppsx|doc|docx|xls|xlsx|names"
                 + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
