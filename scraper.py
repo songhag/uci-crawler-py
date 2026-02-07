@@ -7,6 +7,7 @@ from urllib.parse import urlparse, urljoin, urldefrag
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
 
+
 ALLOWED_HOST_SUFFIXES = (
     "ics.uci.edu",
     "cs.uci.edu",
@@ -14,7 +15,6 @@ ALLOWED_HOST_SUFFIXES = (
     "stat.uci.edu",
 )
 ALLOWED_SCHEMES = {"http", "https"}
-
 
 # Report VAR
 SEEN_URLS = set()
@@ -34,26 +34,32 @@ CONTENT_HASHES = set()
 STATS_PATH = "crawl_stats.json"
 
 STOP_WORDS = {
-    "a","about","above","after","again","against","all","am","an","and","any","are","as","at",
-    "be","because","been","before","being","below","between","both","but","by",
-    "can","could",
-    "did","do","does","doing","down","during",
+    "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are",
+    "as", "at", "also",
+    "be", "because", "been", "before", "being", "below", "between", "both", "but", "by",
+    "can", "could",
+    "did", "do", "does", "doing", "down", "during",
     "each",
-    "few","for","from","further",
-    "had","has","have","having","he","her","here","hers","herself","him","himself","his","how",
-    "i","if","in","into","is","it","its","itself",
+    "few", "for", "from", "further",
+    "had", "has", "have", "having", "he", "her", "here", "hers", "herself", "him", "himself", "his",
+    "how",
+    "i", "if", "in", "into", "is", "it", "its", "itself",
     "just",
-    "me","more","most","my","myself",
-    "no","nor","not","now",
-    "of","off","on","once","only","or","other","our","ours","ourselves","out","over","own",
-    "same","she","should","so","some","such",
-    "than","that","the","their","theirs","them","themselves","then","there","these","they",
-    "this","those","through","to","too",
-    "under","until","up",
+    "me", "more", "most", "my", "myself", "may",
+    "no", "nor", "not", "now",
+    "of", "off", "on", "once", "only", "or", "other", "our", "ours", "ourselves", "out", "over",
+    "own",
+    "same", "she", "should", "so", "some", "such",
+    "than", "that", "the", "their", "theirs", "them", "themselves", "then", "there", "these",
+    "they",
+    "this", "those", "through", "to", "too",
+    "under", "until", "up",
     "very",
-    "was","we","were","what","when","where","which","while","who","whom","why","with","would",
-    "you","your","yours","yourself","yourselves",
+    "was", "we", "were", "what", "when", "where", "which", "while", "who", "whom", "why", "with",
+    "would", "will",
+    "you", "your", "yours", "yourself", "yourselves",
 }
+
 
 def _load_stats():
     """Load persisted stats if present"""
@@ -61,7 +67,7 @@ def _load_stats():
     global GLOBAL_WORD_FREQ, SUBDOMAIN_PAGECOUNT, PATH_FAMILY_COUNT, CONTENT_HASHES
 
     try:
-        with open(STATS_PATH, "r", encoding="utf-8") as f:
+        with open(STATS_PATH, "r", encoding = "utf-8") as f:
             data = json.load(f)
 
         SEEN_URLS = set(data.get("seen_urls", []))
@@ -70,7 +76,8 @@ def _load_stats():
         LONGEST_PAGE_WORDS = int(data.get("longest_page_words", 0))
 
         GLOBAL_WORD_FREQ = Counter(data.get("global_word_freq", {}))
-        SUBDOMAIN_PAGECOUNT = defaultdict(int, {k: int(v) for k, v in data.get("subdomain_pagecount", {}).items()})
+        SUBDOMAIN_PAGECOUNT = defaultdict(int, {k: int(v) for k, v in
+                                                data.get("subdomain_pagecount", {}).items()})
         PATH_FAMILY_COUNT = Counter(data.get("path_family_count", {}))
         CONTENT_HASHES = set(data.get("content_hashes", []))
 
@@ -80,7 +87,7 @@ def _load_stats():
         return
 
 
-def _save_stats(throttle_seconds=2.0):
+def _save_stats(throttle_seconds = 2.0):
     """Persist stats"""
     now = time.time()
     last = getattr(_save_stats, "_last_save_ts", 0.0)
@@ -99,12 +106,10 @@ def _save_stats(throttle_seconds=2.0):
         "content_hashes": sorted(CONTENT_HASHES),
     }
     try:
-        with open(STATS_PATH, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        with open(STATS_PATH, "w", encoding = "utf-8") as f:
+            json.dump(data, f, ensure_ascii = False, indent = 2)
     except Exception:
         pass
-
-
 
 
 def scraper(url, resp):
@@ -147,6 +152,16 @@ def scraper(url, resp):
             _save_stats()
             return valid_links
 
+        wc = len(tokens)
+
+        if wc > 200000:
+            return valid_links
+
+        alpha_chars = sum(c.isalpha() for c in text)
+        alpha_ratio = alpha_chars / max(len(text), 1)
+        if alpha_ratio < 0.6:
+            return valid_links
+
         text_hash = hashlib.sha1(text.encode("utf-8", errors = "ignore")).hexdigest()
         if text_hash in CONTENT_HASHES:
             _save_stats()
@@ -175,6 +190,7 @@ def scraper(url, resp):
         return valid_links
 
     return valid_links
+
 
 _load_stats()
 
@@ -241,7 +257,8 @@ def _standard_url(u: str):
         # remove default ports
         netloc = host
         if parsed.port:
-            if (parsed.scheme == "http" and parsed.port != 80) or (parsed.scheme == "https" and parsed.port != 443):
+            if (parsed.scheme == "http" and parsed.port != 80) or (
+                    parsed.scheme == "https" and parsed.port != 443):
                 netloc = f"{host}:{parsed.port}"
 
         path = parsed.path or "/"
@@ -261,6 +278,7 @@ def _standard_url(u: str):
     except Exception:
         return None
 
+
 def is_valid(url):
     # Decide whether to crawl this url or not.
     # If you decide to crawl it, return True; otherwise return False.
@@ -276,7 +294,8 @@ def is_valid(url):
         # 2. Domain Check: Must be within the specified UCI domains [cite: 17, 53, 121]
         # host is retrieved via parsed.hostname
         host = (parsed.hostname or "").lower()
-        if not any(host == domain or host.endswith("." + domain) for domain in ALLOWED_HOST_SUFFIXES):
+        if not any(
+                host == domain or host.endswith("." + domain) for domain in ALLOWED_HOST_SUFFIXES):
             return False
 
         # 3. Extension Filtering: Avoid non-text or large files
@@ -295,6 +314,11 @@ def is_valid(url):
         path = parsed.path.lower()
         query = (parsed.query or "").lower()
 
+        if "/events/" in path:
+            return False
+
+        if re.search(r"/\d{4}-\d{2}$", path):
+            return False
 
         # 4) Events/calendar traps (minimal)
         if "/events/tag/" in path or "/events/day/" in path:
@@ -327,6 +351,7 @@ def is_valid(url):
         print("TypeError for ", parsed)
         return False
 
+
 def _remove_junk_tags(soup: BeautifulSoup):
     """Remove tags that are not useful for text analytics."""
     for tag in soup(["script", "style", "noscript", "header", "footer", "nav", "aside", "form"]):
@@ -336,7 +361,7 @@ def _remove_junk_tags(soup: BeautifulSoup):
 def _tokenize(text: str):
     """Tokenize visible text into lowercase words/numbers."""
     text = text.lower()
-    return WORD_RE.findall(text)
+    return [t for t in WORD_RE.findall(text) if len(t) >= 2]
 
 
 def _has_repeated_segments(segments):
@@ -363,7 +388,7 @@ def _path_signature(host, path, query_dict):
     for s in segs[:10]:
         if re.fullmatch(r"\d+", s):
             norm_segs.append("{num}")
-        elif re.fullmatch(r"[0-9a-f]{8,}", s, flags=re.IGNORECASE):
+        elif re.fullmatch(r"[0-9a-f]{8,}", s, flags = re.IGNORECASE):
             norm_segs.append("{hex}")
         else:
             norm_segs.append(s.lower())
