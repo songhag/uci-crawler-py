@@ -317,6 +317,16 @@ def is_valid(url):
         path = parsed.path.lower()
         query = (parsed.query or "").lower()
 
+        if any(k in query for k in [
+            "action=diff",
+            "format=txt",
+            "precision=second",
+            "version=",
+            "timeline",
+            "from="
+        ]):
+            return False
+
         if "/events/" in path:
             return False
 
