@@ -148,7 +148,7 @@ def scraper(url, resp):
         text = soup.get_text(separator = " ", strip = True)
         tokens = _tokenize(text)
 
-        if len(tokens) < 50:
+        if len(tokens) < 100:
             _save_stats()
             return valid_links
 
